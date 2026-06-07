@@ -1,0 +1,74 @@
+name: Build and Push SavaPage
+
+on:
+  schedule:
+    - cron: '0 4 * * 1'  # Weekly on Monday at 4AM
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Find latest SavaPage version
+        id: version
+        run: |
+          INDEX=$(curl -s https://www.savapage.org/download/installer/)
+          FILE=$(echo "$INDEX" | grep -oP 'savapage-setup-[0-9]+\.[0-9]+\.[0-9]+(-rc)?-linux-x64\.bin' | sort -V | tail -1)
+          VERSION=$(echo "$FILE" | sed -E 's/savapage-setup-(.*)-linux-x64\.bin/\1/')
+          echo "file=$FILE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Get previously built version
+        id: previous
+        run: |
+          VERSION=$(cat .last_built_version 2>/dev/null || echo "none")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        continue-on-error: true
+
+      - name: Download SavaPage installer
+        if: steps.version.outputs.version != steps.previous.outputs.version
+        run: |
+          curl -o savapage-setup.bin "https://www.savapage.org/download/installer/${{ steps.version.outputs.file }}"
+
+      - name: Build and push
+        if: steps.version.outputs.version != steps.previous.outputs.version
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          build-args: |
+            SAVAPAGE_VERSION=${{ steps.version.outputs.version }}
+          tags: |
+            ghcr.io/water1309/savapage:latest
+            ghcr.io/water1309/savapage:${{ steps.version.outputs.version }}
+
+      - name: Save built version
+        if: steps.version.outputs.version != steps.previous.outputs.version
+        run: |
+          echo "${{ steps.version.outputs.version }}" > .last_built_version
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add .last_built_version
+          git commit -m "Built SavaPage ${{ steps.version.outputs.version }}"
+          git push
