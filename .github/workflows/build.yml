@@ -91,4 +91,5 @@ jobs:
           git config user.email github-actions@github.com
           git add .last_built_version
           git commit -m "Built SavaPage ${{ steps.version.outputs.version }}" || echo "No change to commit"
+          git pull --rebase origin main
           git push
