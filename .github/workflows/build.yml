@@ -4,6 +4,13 @@ on:
   schedule:
     - cron: '0 4 * * 1'  # Weekly on Monday at 4AM
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'Dockerfile'
+      - 'supervisord.conf'
+      - 'docker.env'
+      - 'savapage-run.sh'
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -21,10 +28,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v5
+        uses: actions/checkout@v4
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -34,7 +41,7 @@ jobs:
         id: version
         run: |
           INDEX=$(curl -s https://www.savapage.org/download/installer/)
-          FILE=$(echo "$INDEX" | grep -oP 'savapage-setup-[0-9]+\.[0-9]+\.[0-9]+(-rc)?-linux-x64\.bin' | sort -V | tail -1)
+          FILE=$(echo "$INDEX" | grep -oP 'savapage-setup-[0-9]+\.[0-9]+\.[0-9]+(-rc|-final)?-linux-x64\.bin' | sort -V | tail -1)
           VERSION=$(echo "$FILE" | sed -E 's/savapage-setup-(.*)-linux-x64\.bin/\1/')
           echo "file=$FILE" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT
@@ -46,13 +53,26 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
         continue-on-error: true
 
+      - name: Decide whether to build
+        id: decide
+        run: |
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            # Manual dispatch or a push to the build files: always build.
+            echo "build=true" >> $GITHUB_OUTPUT
+          elif [ "${{ steps.version.outputs.version }}" != "${{ steps.previous.outputs.version }}" ]; then
+            # Scheduled run and upstream version changed: build.
+            echo "build=true" >> $GITHUB_OUTPUT
+          else
+            echo "build=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Download SavaPage installer
-        if: steps.version.outputs.version != steps.previous.outputs.version
+        if: steps.decide.outputs.build == 'true'
         run: |
           curl -o savapage-setup.bin "https://www.savapage.org/download/installer/${{ steps.version.outputs.file }}"
 
       - name: Build and push
-        if: steps.version.outputs.version != steps.previous.outputs.version
+        if: steps.decide.outputs.build == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
@@ -64,11 +84,11 @@ jobs:
             ghcr.io/water1309/savapage:${{ steps.version.outputs.version }}
 
       - name: Save built version
-        if: steps.version.outputs.version != steps.previous.outputs.version
+        if: steps.decide.outputs.build == 'true'
         run: |
           echo "${{ steps.version.outputs.version }}" > .last_built_version
           git config user.name github-actions
           git config user.email github-actions@github.com
           git add .last_built_version
-          git commit -m "Built SavaPage ${{ steps.version.outputs.version }}"
+          git commit -m "Built SavaPage ${{ steps.version.outputs.version }}" || echo "No change to commit"
           git push
