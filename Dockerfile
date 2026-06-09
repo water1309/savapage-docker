@@ -3,6 +3,7 @@ FROM debian:bookworm
 ARG SAVAPAGE_VERSION
 
 RUN apt update && apt install --no-install-recommends --no-install-suggests -y \
+    libreoffice-writer libreoffice-calc libreoffice-impress \
     binutils cpio cups cups-bsd debianutils default-jdk-headless gzip imagemagick \
     librsvg2-bin perl poppler-utils qpdf supervisor wkhtmltopdf libheif-examples \
     vim-tiny findutils apt-utils iputils-ping gnupg curl hplip \
