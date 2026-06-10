@@ -3,7 +3,7 @@ FROM debian:bookworm
 ARG SAVAPAGE_VERSION
 
 RUN apt update && apt install --no-install-recommends --no-install-suggests -y \
-    libreoffice-writer libreoffice-calc libreoffice-impress \
+    libreoffice-writer libreoffice-calc libreoffice-impress libreoffice-java-common \
     fonts-liberation fonts-crosextra-carlito fonts-crosextra-caladea \
     binutils cpio cups cups-bsd debianutils default-jdk-headless gzip imagemagick \
     librsvg2-bin perl poppler-utils qpdf supervisor wkhtmltopdf libheif-examples \
@@ -28,3 +28,8 @@ RUN ["/opt/savapage/server/bin/linux-x64/roottasks", "pam"]
 EXPOSE 631 8631 8632
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+
+# Pre-initialize the LibreOffice profile so the first real conversion isn't slow
+RUN printf "warmup\n" > /tmp/warmup.txt && \
+    soffice --headless --convert-to pdf --outdir /tmp /tmp/warmup.txt; \
+    rm -f /tmp/warmup.txt /tmp/warmup.pdf
