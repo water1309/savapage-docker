@@ -29,7 +29,16 @@ EXPOSE 631 8631 8632
 
 CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
 
-# Pre-initialize the LibreOffice profile so the first real conversion isn't slow
-RUN printf "warmup\n" > /tmp/warmup.txt && \
-    soffice --headless --convert-to pdf --outdir /tmp /tmp/warmup.txt; \
-    rm -f /tmp/warmup.txt /tmp/warmup.pdf
+RUN mv /usr/bin/soffice /usr/bin/soffice.real && \
+    printf '%s\n' \
+      '#!/bin/bash' \
+      '# SavaPage soffice wrapper: isolated per-job profile + clean headless flags.' \
+      'PROFILE="$(mktemp -d /tmp/lo-XXXXXX)"' \
+      'trap "rm -rf \"$PROFILE\"" EXIT' \
+      'exec /usr/bin/soffice.real \' \
+      '  -env:UserInstallation=file://$PROFILE \' \
+      '  --headless --nologo --nofirststartwizard \' \
+      '  --nolockcheck --nodefault --norestore \' \
+      '  "$@"' \
+      > /usr/bin/soffice && \
+    chmod +x /usr/bin/soffice
